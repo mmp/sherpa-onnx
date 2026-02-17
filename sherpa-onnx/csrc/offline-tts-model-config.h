@@ -28,6 +28,14 @@ struct OfflineTtsModelConfig {
   int32_t num_threads = 1;
   bool debug = false;
   std::string provider = "cpu";
+  bool low_priority = false;
+
+  // When non-null, use these pre-loaded buffers instead of reading from disk.
+  // The caller must keep these alive for the lifetime of the TTS instance.
+  const void *shared_model_data = nullptr;
+  size_t shared_model_data_size = 0;
+  const void *shared_voices_data = nullptr;
+  size_t shared_voices_data_size = 0;
 
   OfflineTtsModelConfig() = default;
 

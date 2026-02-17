@@ -1151,6 +1151,8 @@ SHERPA_ONNX_API typedef struct SherpaOnnxOfflineTtsModelConfig {
   SherpaOnnxOfflineTtsKittenModelConfig kitten;
   SherpaOnnxOfflineTtsZipvoiceModelConfig zipvoice;
   SherpaOnnxOfflineTtsPocketModelConfig pocket;
+  int32_t low_priority_threads;  // if nonzero, ONNX worker threads run at
+                                 // lower OS priority
 } SherpaOnnxOfflineTtsModelConfig;
 
 SHERPA_ONNX_API typedef struct SherpaOnnxOfflineTtsConfig {
@@ -1184,10 +1186,28 @@ typedef int32_t (*SherpaOnnxGeneratedAudioProgressCallbackWithArg)(
 
 SHERPA_ONNX_API typedef struct SherpaOnnxOfflineTts SherpaOnnxOfflineTts;
 
+// Opaque handle holding model bytes for sharing between TTS instances.
+SHERPA_ONNX_API typedef struct SherpaOnnxTtsSharedWeights
+    SherpaOnnxTtsSharedWeights;
+
+// Load model and voice data into memory once for sharing between instances.
+SHERPA_ONNX_API const SherpaOnnxTtsSharedWeights *
+SherpaOnnxCreateTtsSharedWeights(const char *model_path,
+                                 const char *voices_path);
+
+SHERPA_ONNX_API void SherpaOnnxDestroyTtsSharedWeights(
+    const SherpaOnnxTtsSharedWeights *p);
+
 // Create an instance of offline TTS. The user has to use DestroyOfflineTts()
 // to free the returned pointer to avoid memory leak.
 SHERPA_ONNX_API const SherpaOnnxOfflineTts *SherpaOnnxCreateOfflineTts(
     const SherpaOnnxOfflineTtsConfig *config);
+
+// Create TTS instance using shared weights. Pass NULL for independent loading.
+SHERPA_ONNX_API const SherpaOnnxOfflineTts *
+SherpaOnnxCreateOfflineTtsWithSharedWeights(
+    const SherpaOnnxOfflineTtsConfig *config,
+    const SherpaOnnxTtsSharedWeights *shared);
 
 // Free the pointer returned by SherpaOnnxCreateOfflineTts()
 SHERPA_ONNX_API void SherpaOnnxDestroyOfflineTts(

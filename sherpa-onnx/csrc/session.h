@@ -9,6 +9,7 @@
 
 #include "onnxruntime_cxx_api.h"  // NOLINT
 #include "sherpa-onnx/csrc/offline-lm-config.h"
+#include "sherpa-onnx/csrc/offline-tts-model-config.h"
 #include "sherpa-onnx/csrc/online-lm-config.h"
 #include "sherpa-onnx/csrc/online-model-config.h"
 
@@ -16,7 +17,8 @@ namespace sherpa_onnx {
 
 Ort::SessionOptions GetSessionOptionsImpl(
     int32_t num_threads, const std::string &provider_str,
-    const ProviderConfig *provider_config = nullptr);
+    const ProviderConfig *provider_config = nullptr,
+    bool low_priority = false);
 
 Ort::SessionOptions GetSessionOptions(const OfflineLMConfig &config);
 Ort::SessionOptions GetSessionOptions(const OnlineLMConfig &config);
@@ -33,6 +35,9 @@ template <typename T>
 Ort::SessionOptions GetSessionOptions(const T &config) {
   return GetSessionOptionsImpl(config.num_threads, config.provider);
 }
+
+// Overload for OfflineTtsModelConfig which supports low_priority threads.
+Ort::SessionOptions GetSessionOptions(const OfflineTtsModelConfig &config);
 
 }  // namespace sherpa_onnx
 

@@ -34,10 +34,20 @@ class OfflineTtsKokoroModel::Impl {
         env_(ORT_LOGGING_LEVEL_ERROR),
         sess_opts_(GetSessionOptions(config)),
         allocator_{} {
-    auto model_buf = ReadFile(config.kokoro.model);
-    auto voices_buf = ReadFile(config.kokoro.voices);
-    Init(model_buf.data(), model_buf.size(), voices_buf.data(),
-         voices_buf.size());
+    if (config.shared_model_data && config.shared_model_data_size > 0 &&
+        config.shared_voices_data && config.shared_voices_data_size > 0) {
+      // Use pre-loaded shared data; set option to reference buffer directly
+      sess_opts_.AddConfigEntry("session.use_ort_model_bytes_directly", "1");
+      Init(const_cast<void *>(config.shared_model_data),
+           config.shared_model_data_size,
+           static_cast<const char *>(config.shared_voices_data),
+           config.shared_voices_data_size);
+    } else {
+      auto model_buf = ReadFile(config.kokoro.model);
+      auto voices_buf = ReadFile(config.kokoro.voices);
+      Init(model_buf.data(), model_buf.size(), voices_buf.data(),
+           voices_buf.size());
+    }
   }
 
   template <typename Manager>

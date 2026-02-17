@@ -6,12 +6,24 @@
 
 #include <algorithm>
 #include <string>
+#include <thread>  // NOLINT
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "sherpa-onnx/csrc/macros.h"
 #include "sherpa-onnx/csrc/provider.h"
+
+#ifdef __APPLE__
+#include <pthread.h>
+#include <sys/qos.h>
+#endif
+#ifdef __linux__
+#include <unistd.h>
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #if defined(__APPLE__) && (ORT_API_VERSION >= 15) && \
     !defined(SHERPA_ONNX_DISABLE_COREML)
 #include "coreml_provider_factory.h"  // NOLINT
@@ -31,6 +43,39 @@
 
 namespace sherpa_onnx {
 
+// Low-priority thread creation for ONNX Runtime worker threads.
+// Each worker thread sets its own OS priority at creation time.
+struct LowPriorityThreadData {
+  OrtThreadWorkerFn fn;
+  void *param;
+};
+
+static void LowPriorityThreadEntry(LowPriorityThreadData *data) {
+#ifdef __APPLE__
+  pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+#elif defined(__linux__)
+  nice(10);
+#elif defined(_WIN32)
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#endif
+  data->fn(data->param);
+  delete data;
+}
+
+static OrtCustomThreadHandle LowPriorityCreateThread(
+    void * /*options*/, OrtThreadWorkerFn fn, void *param) {
+  auto *data = new LowPriorityThreadData{fn, param};
+  auto *t = new std::thread(LowPriorityThreadEntry, data);
+  return reinterpret_cast<OrtCustomThreadHandle>(t);
+}
+
+static void LowPriorityJoinThread(OrtCustomThreadHandle handle) {
+  auto *t =
+      reinterpret_cast<std::thread *>(const_cast<OrtCustomHandleType *>(handle));
+  t->join();
+  delete t;
+}
+
 static void OrtStatusFailure(OrtStatus *status, const char *s) {
   const auto &api = Ort::GetApi();
   const char *msg = api.GetErrorMessage(status);
@@ -43,7 +88,8 @@ static void OrtStatusFailure(OrtStatus *status, const char *s) {
 
 Ort::SessionOptions GetSessionOptionsImpl(
     int32_t num_threads, const std::string &provider_str,
-    const ProviderConfig *provider_config /*= nullptr*/) {
+    const ProviderConfig *provider_config /*= nullptr*/,
+    bool low_priority /*= false*/) {
   Provider p = StringToProvider(provider_str);
 
   Ort::SessionOptions sess_opts;
@@ -283,6 +329,12 @@ Ort::SessionOptions GetSessionOptionsImpl(
       break;
     }
   }
+
+  if (low_priority) {
+    sess_opts.SetCustomCreateThreadFn(LowPriorityCreateThread);
+    sess_opts.SetCustomJoinThreadFn(LowPriorityJoinThread);
+  }
+
   return sess_opts;
 }
 
@@ -319,6 +371,11 @@ Ort::SessionOptions GetSessionOptions(const OnlineLMConfig &config) {
 Ort::SessionOptions GetSessionOptions(int32_t num_threads,
                                       const std::string &provider_str) {
   return GetSessionOptionsImpl(num_threads, provider_str);
+}
+
+Ort::SessionOptions GetSessionOptions(const OfflineTtsModelConfig &config) {
+  return GetSessionOptionsImpl(config.num_threads, config.provider, nullptr,
+                               config.low_priority);
 }
 
 }  // namespace sherpa_onnx

@@ -1265,6 +1265,11 @@ struct SherpaOnnxOfflineTts {
   std::unique_ptr<sherpa_onnx::OfflineTts> impl;
 };
 
+struct SherpaOnnxTtsSharedWeights {
+  std::vector<char> model_data;
+  std::vector<char> voices_data;
+};
+
 static sherpa_onnx::OfflineTtsConfig GetOfflineTtsConfig(
     const SherpaOnnxOfflineTtsConfig *config) {
   sherpa_onnx::OfflineTtsConfig tts_config;
@@ -1367,6 +1372,7 @@ static sherpa_onnx::OfflineTtsConfig GetOfflineTtsConfig(
   tts_config.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
   tts_config.model.debug = config->model.debug;
   tts_config.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
+  tts_config.model.low_priority = config->model.low_priority_threads != 0;
   if (tts_config.model.provider.empty()) {
     tts_config.model.provider = "cpu";
   }
@@ -1400,6 +1406,47 @@ const SherpaOnnxOfflineTts *SherpaOnnxCreateOfflineTts(
 
   tts->impl = std::make_unique<sherpa_onnx::OfflineTts>(tts_config);
 
+  return tts;
+}
+
+const SherpaOnnxTtsSharedWeights *SherpaOnnxCreateTtsSharedWeights(
+    const char *model_path, const char *voices_path) {
+  auto *sw = new SherpaOnnxTtsSharedWeights;
+  sw->model_data = sherpa_onnx::ReadFile(model_path);
+  sw->voices_data = sherpa_onnx::ReadFile(voices_path);
+  if (sw->model_data.empty() || sw->voices_data.empty()) {
+    delete sw;
+    return nullptr;
+  }
+  return sw;
+}
+
+void SherpaOnnxDestroyTtsSharedWeights(const SherpaOnnxTtsSharedWeights *p) {
+  delete p;
+}
+
+const SherpaOnnxOfflineTts *SherpaOnnxCreateOfflineTtsWithSharedWeights(
+    const SherpaOnnxOfflineTtsConfig *config,
+    const SherpaOnnxTtsSharedWeights *shared) {
+  if (!shared) {
+    return SherpaOnnxCreateOfflineTts(config);
+  }
+
+  auto tts_config = GetOfflineTtsConfig(config);
+
+  // Inject shared buffers so the model uses them instead of reading from disk
+  tts_config.model.shared_model_data = shared->model_data.data();
+  tts_config.model.shared_model_data_size = shared->model_data.size();
+  tts_config.model.shared_voices_data = shared->voices_data.data();
+  tts_config.model.shared_voices_data_size = shared->voices_data.size();
+
+  if (!tts_config.Validate()) {
+    SHERPA_ONNX_LOGE("Errors in config");
+    return nullptr;
+  }
+
+  SherpaOnnxOfflineTts *tts = new SherpaOnnxOfflineTts;
+  tts->impl = std::make_unique<sherpa_onnx::OfflineTts>(tts_config);
   return tts;
 }
 
